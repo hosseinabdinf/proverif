@@ -1,0 +1,9 @@
+(* hello.pv : Hello World Script *)
+
+free c:channel.
+free Cocks: bitstring [private].
+free RSA: bitstring [private].
+
+process
+  out(c,RSA);
+  0
