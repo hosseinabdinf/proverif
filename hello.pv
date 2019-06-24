@@ -4,6 +4,20 @@ free c:channel.
 free Cocks: bitstring [private].
 free RSA: bitstring [private].
 
+event evCocks.
+event evRSA.
+
+(*
+query attacker(RSA).
+query attacker(Cocks).
+*)
+query event(evCocks) ==> event(evRSA).
+
 process
   out(c,RSA);
-  0
+  in(c,x:bitstring);
+  if x=Cocks then
+    event evCocks;
+    event evRSA
+  else
+    event evRSA
