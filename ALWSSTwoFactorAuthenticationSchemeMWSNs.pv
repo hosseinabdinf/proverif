@@ -7,12 +7,13 @@
 *)
 
 (* types and variables *)
-free c1:channel. (* public channel *)
-free c2:channel. (* public channel *)
+free c1:channel. (* public channel between GateWay and Sensor *)
+free c2:channel. (* public channel between GateWay and User *)
 free secureC1:channel[private]. (* secure channel for Sensors Registeration phase *)
 free secureC2:channel[private]. (* secure channel for Users Registeration phase *)
 
 free IDi: bitstring[private]. (*user i'th identity*)
+free CIDi: bitstring[private]. (*user i'th psudo identity*)
 free PWi: bitstring[private]. (*user i'th password*)
 weaksecret PWi. (* for check password offline gussing attack*)
 free GIDj: bitstring[private]. (*gateway node j'th identity*)
@@ -20,9 +21,9 @@ free SIDk: bitstring[private]. (*sensor node k'th identity*)
 free Gj: bitstring[private]. (*gateway node j'th secret key*)
 free Nl:bitstring[private]. (* network identier *)
 
-free sku:bitstring[private].
-free skg:bitstring[private].
-free sks:bitstring[private].
+free sku:bitstring[private]. (* User Session key *)
+free skg:bitstring[private]. (* GateWay node Session key *)
+free sks:bitstring[private]. (* Sensor node Session key *)
 
 table Sensors(bitstring,bitstring,bitstring,bitstring,bitstring).
 (* table columns : IDi,CIDi,HPWi,Rx *)
@@ -31,62 +32,102 @@ table Users(bitstring,bitstring,bitstring,bitstring).
 fun h(bitstring):bitstring. (* hash function*)
 fun xor(bitstring,bitstring):bitstring. (* exclusive OR function *)
 fun con(bitstring,bitstring):bitstring. (* CONCATENATE function *)
+fun con3(bitstring,bitstring,bitstring):bitstring. (* CONCATENATE function *)
+fun con4(bitstring,bitstring,bitstring,bitstring):bitstring. (* CONCATENATE function *)
+fun con5(bitstring,bitstring,bitstring,bitstring,bitstring):bitstring. (* CONCATENATE function *)
 equation forall m:bitstring,n:bitstring;xor(xor(m,n),n)=m. (* xor inverse function*)
+
+event UserStart(bitstring).
+event UserAuth(bitstring).
+event SensorStart(bitstring).
+event SensorAuth(bitstring).
+
+query attacker(sku).
+query attacker(skg).
+query attacker(sks).
+
+query id:bitstring; inj-event(SensorAuth(id)) ==> inj-event(SensorStart(id)).
+query id:bitstring; inj-event(UserAuth(id)) ==> inj-event(UserStart(id)).
 
 (* Sensor registration Phase *)
 let SensorReg =
 new Ry:bitstring;
 new Rz:bitstring;
-new QID_k:bitstring;
+new QIDk:bitstring;
 let SG_k = h(con(SIDk,con(Gj,Nl))) in
 (* inject data to sensor by a secure channel *)
 out(secureC1,(SIDk,SG_k,GIDj,Ry,Rz,QIDk));
 let hRz = h(Rz) in
-(* save new sensor data to database*)
+(* save new sensor to database*)
 insert Sensors(SIDk,QIDk,Nl,Ry,hRz).
 
 (* User registration Phase *)
 let UserReg =
 in(secureC2,(IDreg:bitstring,HPWreg:bitstring));
-new CIDi:bitstring;
 new Rx:bitstring;
+(* save new user to database *)
 insert Users(IDreg,CIDi,HPWreg,Rx);
-let A1 = h(con(CIDi,con(Rx,con(GIDj,Gj)))) in
-let A2 = xor(h(con(IDi,Gj)),h(con(IDi,HPWi))) in
+let A1 = h(con4(CIDi,Rx,GIDj,Gj)) in
+let A2 = xor(h(con(IDreg,Gj)),h(con(IDreg,HPWreg))) in
 (* send data to user by a secure channel *)
 out(secureC2,(A1,A2,CIDi,GIDj)).
 
 (* GateWay Authentication Phase *)
 let GWAuth =
-in(c,(gCIDi:bitstring,gGIDj:bitstring,gB2:bitstring,gB3:bitstring,gB4:bitstring));
+in(c1,(gCIDi:bitstring,gGIDj:bitstring,gB2:bitstring,gB3:bitstring,gB4:bitstring));
 if GIDj = gGIDj then
 if CIDi = gCIDi then
+(* fetch user information from database *)
 get Users(IDi,=gCIDi,HPWi,Rx) in
-let gB1 = h(con(gCIDi,con(Rx,con(gGIDj,Gj)))) in
+let gB1 = h(con4(gCIDi,Rx,gGIDj,Gj)) in
 let gRu = xor(gB2,xor(gB1,HPWi)) in
-if gB4 = h(con(gCIDi,con(gGIDj,con(SIDk,con(gB1,con(IDi,gRu)))))) then
+if gB4 = h(con(gCIDi,con5(gGIDj,SIDk,gB1,IDi,gRu))) then
+
+event UserAuth(gCIDi);
+
 new Rg:bitstring;
-new Rznew:bitstring;
+new gRznew:bitstring;
 let SIDk = xor(gB3,xor(IDi,gRu)) in
-(* check SIDk *)
-new QIDknew:bitstring;
-(* fetch Ry from database *)
+(* fetch sensor information from database *)
 get Sensors(=SIDk,QIDk,Nl,Ry,hRz) in
-let SGk = h(con(SIDk,con(Gj,Nl))) in
+(* check SIDk => SIDk checked before in database selection *)
+new gQIDknew:bitstring;
+let SGk = h(con3(SIDk,Gj,Nl)) in
 let S = h(con(SGk,gGIDj)) in
-let B5 = xor(xor(Ry,xor(S,xor(gRu,HPWi)))) in
+let B5 = xor(Ry,xor(S,xor(gRu,HPWi))) in
 let B6 = xor(Rg,xor(S,xor(Ry,SIDk))) in
-let B7 = xor(QIDknew,xor(Rg,Ry)) in
-let B8 = xor(Rznew,h(con(S,con(Ry,Rg)))) in
-let B9 = h(con(QIDk,con(B7,con(B8,con(SGk,con(gRu,con(HPWi,Rg))))))) in
+let B7 = xor(gQIDknew,xor(Rg,Ry)) in
+let B8 = xor(gRznew,h(con3(S,Ry,Rg))) in
+let B9 = h(con(QIDk,con5(B7,B8,SGk,xor(gRu,HPWi),Rg))) in
 let M2 = (QIDk,B5,B6,B7,B8,B9) in
 out(c2,M2);
 
 in(c2,(gB10:bitstring,gB11:bitstring,gB12:bitstring));
-let Ry' = h(Ry) in
-let Rz' = xor(Rg,xor(S,gB10)) in
-if (h(Rz)=h(Rz')) then
-let Rs = xor(gB11,h(con(SGk,Rg)))
+let Rybar = h(Ry) in
+let Rzbar = xor(Rg,xor(S,gB10)) in
+if (hRz=h(Rzbar)) then
+
+event SensorAuth(SIDk);
+
+let gRs = xor(gB11,h(con(SGk,Rg))) in
+let skg = h(con3(xor(gRu,HPWi),Rg,gRs)) in
+(* check B12 *)
+if gB12 = h(con(gB10,con5(gB11,skg,SIDk,GIDj,gRs))) then
+new gCIDinew:bitstring;
+let B13 = xor(h(con4(gCIDinew,h(Rx),GIDj,Gj)),h(con(gRu,HPWi))) in
+let B14 = xor(Rg,h(con(gRu,IDi))) in
+let B15 = xor(h(con3(gRu,Rg,HPWi)),gRs) in
+let B16 = xor(h(con(h(con(IDi,Gj)),gRs)),gCIDinew) in
+let Ry = Rybar in
+(* store gQIDknew, h(gRznew), Ry *)
+insert Sensors(SIDk,gQIDknew,Nl,Ry,h(gRznew));
+let gRx = h(Rx) in
+(* need to store updated Rx in user table *)
+insert Users(IDi,CIDi,HPWi,gRx);
+let B17 = con4(skg,IDi,gB10,gCIDinew) in
+let M4 = (B13,B14,B15,B16,B17) in
+out(c1,M4). (* send M4 with channel to user node *)
+
 (* GateWay node Macro *)
 let GW = SensorReg | UserReg | !(GWAuth).
 (*****************************)
@@ -101,6 +142,7 @@ let A3 = xor(h(con(IDi,PWi)),R0) in
 (* store A1,A2,A3,CIDi,GIDj in mobile device *)
 !
 (
+    event UserStart(CIDi);
     new uRu:bitstring;
     new uSIDk:bitstring;
     let uR0 = xor(A3,h(con(IDi,PWi))) in
@@ -108,23 +150,49 @@ let A3 = xor(h(con(IDi,PWi)),R0) in
     let B1 = xor(A1reg,uHPWi) in
     let B2 = xor(B1,xor(uHPWi,uRu)) in
     let B3 = xor(uSIDk,xor(IDi,uRu)) in
-    let B4 = h(con(CIDireg,con(GIDjreg,con(uSIDk,con(B1,con(IDi,uRu)))))) in
+    let B4 = h(con(CIDireg,con5(GIDjreg,uSIDk,B1,IDi,uRu))) in
     let M1 = (CIDireg, GIDjreg, B2, B3, B4) in
     out(c1,M1);
 
     in(c1,(uB13:bitstring,uB14:bitstring,uB15:bitstring,uB16:bitstring,uB17:bitstring));
-    let uRg = xor(uB14,h(con(uRu,IDi)) in
-    let uRs = xor(uB15,h(con(uRu,con(uRg,uHPWi)))) in
-    let CIDinew = xor(uB16,h(con(xor(A2reg,h(con(IDi,uHPWi))),uRs))) in
-    let sku = h(con(con(xor(uRu,uHPWi),uRg),uRs)) in
-    let B17bar = h(con(sku,con(IDi,con()))) in
-    if uB17 = B17bar then
-    let A1new = xor(uB13,xor(h(con(uRu,uHPWi),uHPWi)) in
-    (* store CIDinew , A1new in mobile device *)
+    let uRg = xor(uB14,h(con(uRu,IDi))) in
+    let uRs = xor(uB15,h(con3(uRu,uRg,uHPWi))) in
+    let uCIDinew = xor(uB16,h(con(xor(A2reg,h(con(IDi,uHPWi))),uRs))) in
+    let sku = h(con3(xor(uRu,uHPWi),uRg,uRs)) in
+    (* if uB17 = (h(con4(sku,IDi,uB10,uCIDinew))) then *)
+    let A1new = xor(uB13,xor(h(con(uRu,uHPWi)),uHPWi)) in
+    (* store uCIDinew , A1new in mobile device *)
     0
 ).
 (*******************************)
 (* Sensor Authentication Phase *)
 (*******************************)
 let Sensor =
-in(secureC1,(SIDkreg:bitstring,SG_kreg:bitstring,GIDjreg:bitstring,Ryreg:bitstring,Rzreg:bitstring,QIDkreg:bitstring));
+in(secureC1,(SIDkrg:bitstring,SG_krg:bitstring,GIDjrg:bitstring,Ryrg:bitstring,Rzrg:bitstring,QIDkrg:bitstring));
+!
+(
+in(c2,(sQIDk:bitstring,sB5:bitstring,sB6:bitstring,sB7:bitstring,sB8:bitstring,sB9:bitstring));
+event SensorStart(SIDk);
+(* check QIDk *)
+if QIDkrg = sQIDk then
+let S = h(con(SG_krg,GIDjrg)) in
+let RuPwd = xor(sB5,xor(S,Ryrg)) in
+let sRg = xor(sB6,xor(S,xor(SIDkrg,Ryrg))) in
+if (h(con(sQIDk,con5(sB7,sB8,SG_krg,RuPwd,sRg)))) = sB9 then
+new Rs:bitstring;
+let sRznew = xor(h(con3(sRg,Ryrg,S)),sB8) in
+let sQIDknew = xor(xor(sB7,sRg),Ryrg) in
+let sks = h(con3(RuPwd,sRg,Rs)) in
+let B10 = xor(sRg,xor(S,sRznew)) in
+(* store sQIDknew , sRznew in Sensors table *)
+insert Sensors(SIDkrg, sQIDknew, Nl, Ryrg, h(sRznew));
+let sRynew = h(Ryrg) in
+let B11 = xor(xor(h(con(SG_krg,sRg)),sRynew),Rs) in
+let B12 = h(con(B10,con5(B11, sks, SIDkrg, GIDjrg, Rs))) in
+let M3 = (B10,B11,B12) in
+out(c2,M3);
+0
+).
+
+process
+((User)|(GW)|(Sensor))
