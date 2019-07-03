@@ -124,7 +124,7 @@ insert Sensors(SIDk,gQIDknew,Nl,Ry,h(gRznew));
 let gRx = h(Rx) in
 (* need to store updated Rx in user table *)
 insert Users(IDi,CIDi,HPWi,gRx);
-let B17 = con4(skg,IDi,gB10,gCIDinew) in
+let B17 = h(con4(skg,IDi,B13,gCIDinew)) in
 let M4 = (B13,B14,B15,B16,B17) in
 out(c1,M4). (* send M4 with channel to user node *)
 
@@ -159,7 +159,7 @@ let A3 = xor(h(con(IDi,PWi)),R0) in
     let uRs = xor(uB15,h(con3(uRu,uRg,uHPWi))) in
     let uCIDinew = xor(uB16,h(con(xor(A2reg,h(con(IDi,uHPWi))),uRs))) in
     let sku = h(con3(xor(uRu,uHPWi),uRg,uRs)) in
-    (* if uB17 = (h(con4(sku,IDi,uB10,uCIDinew))) then *)
+    if uB17 = (h(con4(sku,IDi,uB13,uCIDinew))) then
     let A1new = xor(uB13,xor(h(con(uRu,uHPWi)),uHPWi)) in
     (* store uCIDinew , A1new in mobile device *)
     0
