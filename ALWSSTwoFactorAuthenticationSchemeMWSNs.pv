@@ -1,9 +1,9 @@
 (*
-  Article: A lightweight and strongly secure two-factor authentication scheme
-  for medical wireless sensor networks in healthcare systems
+  Article: A lightweight and strongly secure two-factor authentication scheme for medical wireless sensor networks in healthcare systems
   Authors: Mahdi Fotouhi, Hossein Abdi
   Publish Date:
   DOI:
+  ProVerif Version: Proverif 2.00. Cryptographic protocol verifier, by Bruno Blanchet, Vincent Cheval, and Marc Sylvestre
 *)
 
 (* types and variables *)
