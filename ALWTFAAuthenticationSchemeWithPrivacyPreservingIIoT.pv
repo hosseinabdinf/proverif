@@ -186,7 +186,7 @@ in(sc2, (SIDj:bitstring,Kgs:bitstring,TKj:bitstring));
 (******************************)
 let Gateway =
 in(pc,gX:ellipticCurvePoint);
-(* handle user registeration *)
+(* handle user registration  *)
 new ni:random; (* user token seed *)
 in(sc1,(gIDi:bitstring,gHPWi:bitstring));
 let gBi = xor(h(con(gIDi,MaS)),gHPWi) in
@@ -196,7 +196,7 @@ insert UsersTable(gIDi,gTKi);
 (* the gateway sends smart card data over secure channel to the user node *)
 out(sc1,(gBi,gX,gTKi));
 
-(* handle sensor registeration *)
+(* handle sensor registration  *)
 new gSIDj:bitstring; (* create a sensor identity *)
 new nj:random; (* sensor token seed *)
 let gTKj = h(random2bs(nj)) in
