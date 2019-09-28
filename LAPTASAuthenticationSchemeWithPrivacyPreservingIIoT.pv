@@ -1,0 +1,269 @@
+(*
+  Article: LAPTAS: Lightweight Anonymous Privacy-Preserving Three-Factor Authentication Protocols for WSN-Based IIoT
+  Authors: Hossein Abdi
+  Publish Date:
+  DOI:
+  ProVerif Version: Proverif 2.00. Cryptographic protocol verifier, by Bruno Blanchet, Vincent Cheval, and Marc Sylvestre
+*)
+
+(* types and variables *)
+type random. (* random number : 128 bitstring *)
+type timestamp. (* timestamp : 32 bitstring*)
+type biometric. (* biometric information *)
+type ellipticCurvePoint . (* ellipticCurvePoint : 320 bitstring*)
+type fuzzyHelper. (* fuzzy extractor helper *)
+type fuzzySecret. (* fuzzy extractor secret *)
+
+free sc1:channel[private]. (* secure channel U <-> GWN *)
+free sc2:channel[private]. (* secure channel GWN <-> S *)
+free pc:channel. (* public channel U <-> GWN <-> S *)
+
+free IDi:bitstring[private].
+free PWi:bitstring[private].
+free alpha:bitstring [private]. (* define fuzzy extractor secret as a private variable *)
+free delta:bitstring.  (* define fuzzy extractor helper *)
+weaksecret PWi.
+
+free x:random[private].   (* GWN secret key *)
+free MaS:bitstring[private]. (* GWN master secret key *)
+free P:ellipticCurvePoint.   (* Public Elliptic Curve Point*)
+free SKi:bitstring[private]. (* User Session Key *)
+free SKg:bitstring[private]. (* GateWay Session Key *)
+free SKj:bitstring[private]. (* Sensor Session Key *)
+
+(* sensor table columns : SIDi,TKj *)
+table SensorsTable(bitstring,bitstring).
+(* user table columns : IDi,TKi *)
+table UsersTable(bitstring,bitstring).
+
+(* Functions *)
+fun h(bitstring):bitstring. (* hash function*)
+fun xor(bitstring,bitstring):bitstring. (* exclusive OR function *)
+fun con(bitstring,bitstring):bitstring. (* CONCATENATE function *)
+fun con3(bitstring,bitstring,bitstring):bitstring. (* CONCATENATE function *)
+fun con4(bitstring,bitstring,bitstring,bitstring):bitstring. (* CONCATENATE function *)
+fun con5(bitstring,bitstring,bitstring,bitstring,bitstring):bitstring. (* CONCATENATE function *)
+equation forall m:bitstring,n:bitstring;xor(xor(m,n),n)=m. (* xor inverse function*)
+fun eccMul(random, ellipticCurvePoint):ellipticCurvePoint. (* Elliptic Curve Based Multiplication *)
+fun fuzzyGenSecret(biometric):fuzzySecret. (* fuzzy extractor generation function return secret parameter *)
+fun fuzzyGenHelper(biometric):fuzzyHelper. (* fuzzy extractor generation function return helper parameter *)
+fun fuzzyRep(biometric,fuzzyHelper):fuzzySecret. (* fuzzy extractor reproduction function *)
+(* check timestamp freshness *)
+fun checktimestamp(timestamp, bool): bool
+reduc forall T: timestamp; checktimestamp(T, true) = true
+otherwise forall T: timestamp; checktimestamp(T, false) = false.
+
+(* Type convertion *)
+fun random2bs(random): bitstring [data,typeConverter].
+fun timestamp2bs(timestamp): bitstring [data,typeConverter].
+fun biometric2bs(biometric): bitstring [data,typeConverter].
+fun fuzzyHelper2bs(fuzzyHelper): bitstring [data,typeConverter].
+fun fuzzySecret2bs(fuzzySecret): bitstring [data,typeConverter].
+fun eccPoint2bs(ellipticCurvePoint): bitstring [data, typeConverter].
+fun bs2eccPoint(bitstring):ellipticCurvePoint [data, typeConverter].
+fun bs2timestamp(bitstring): timestamp [data,typeConverter].
+fun bs2fuzzyHelper(bitstring): fuzzyHelper [data,typeConverter].
+
+(* Events *)
+event UserStart(bitstring).
+event UserAuthenticated(bitstring).
+event SensorStart(bitstring).
+event SensorAuthenticated(bitstring).
+event GWNuStart(bitstring).
+event GWNsStart(bitstring).
+event GWNuAuthenticated(bitstring).
+event GWNsAuthenticated(bitstring).
+
+(* attacker query *)
+query attacker(SKi).
+query attacker(SKg).
+query attacker(SKj).
+
+query sid:bitstring; inj-event(SensorAuthenticated(sid)) ==> inj-event(SensorStart(sid)).
+query uid:bitstring; inj-event(UserAuthenticated(uid)) ==> inj-event(UserStart(uid)).
+query gid:bitstring; inj-event(GWNuAuthenticated(gid)) ==> inj-event(GWNuStart(gid)).
+query gid:bitstring; inj-event(GWNsAuthenticated(gid)) ==> inj-event(GWNsStart(gid)).
+
+(******************************)
+(*            USER            *)
+(******************************)
+let User =
+(* User Registeration Phase *)
+new ai: random;     (* generate a random number *)
+new BIOi: biometric;(* imprint his/her biometric *)
+
+let alpha = fuzzySecret2bs(fuzzyGenSecret(BIOi)) in
+let delta = fuzzyHelper2bs(fuzzyGenHelper(BIOi)) in
+let RPWi = h(con(PWi,random2bs(ai))) in
+let Ai = h(con3(IDi,RPWi,alpha)) in
+let HPWi = h(con(RPWi,alpha)) in
+(* send data over secure channel to gateway node *)
+out(sc1,(IDi,HPWi));
+(* recieve smart card data over secure channel from gateway node *)
+in(sc1,(uBi:bitstring,uX:ellipticCurvePoint,TKi:bitstring));
+(* now user have {Gen(.), Rep(.), tp, delta, Ai, f(.), ai, Bi, X, TKi} in smart card *)
+
+(* User Authentication Phase *)
+(* Launch an unbounded number of sessions *)
+!(
+      (* the user imprints biometric data bi' *)
+      new BIOi':biometric;
+      new uIDi:bitstring;
+      event UserStart(uIDi);
+      new uPWi:bitstring;
+      let alpha' = fuzzySecret2bs(fuzzyRep(BIOi',bs2fuzzyHelper(delta)))  in
+      let Ai' = h(con3(uIDi,con(uPWi,random2bs(ai)),alpha')) in
+      if (Ai' = Ai) then
+      (* the user identity and password verification is passed *)
+      new ri:random;
+      new e:random;
+      new ti:timestamp;
+      (* the RCD create one-time shared key between user and gateway*)
+      let Kgu = xor(TKi,xor(uBi,h(con(h(con(uPWi,random2bs(ai))),alpha')))) in
+      let M1 = eccPoint2bs(eccMul(e,P)) in  (* M1=eP *)
+      let M2 = eccPoint2bs(eccMul(e,uX)) in (* M2=eX=exP *)
+      let M3 = xor(uIDi,M2) in
+      let M4 = xor(Kgu,random2bs(ri)) in
+      new uSIDj:bitstring; (* choose a sensor id *)
+      let M5 = xor(uSIDj,h(con(uIDi,random2bs(ri)))) in
+      let M6 = xor(M2,timestamp2bs(ti)) in
+      let M7 = h(con5(M2,Kgu,uSIDj,random2bs(ri),timestamp2bs(ti))) in
+      (* the user sends authentication request to the gateway node *)
+      out(pc,(M1,M3,M4,M5,M6,M7,true));
+
+      (* the user recieves authentication response from gateway node *)
+      in(pc,(uM16:bitstring,uM17:bitstring,uM18:bitstring,uM19:bitstring,uT:bool));
+      let utg' = bs2timestamp(xor(M2,uM18)) in
+      if(checktimestamp(utg',uT)) then
+      let urg' = xor(Kgu,uM16) in
+      let urj' = xor(random2bs(ri),uM17) in
+      let SKi = h(con3(xor(uIDi,random2bs(ri)),xor(uSIDj,urj'),urg')) in
+      let M19' = h(con4(SKi,urg',urj',timestamp2bs(utg'))) in
+      if((M19' = uM19)) then
+      event GWNuAuthenticated(uIDi);
+      (* the gateway node is verified and now the user updates the hash-chain token *)
+      let TKi = h(TKi) in
+      0
+).
+
+(******************************)
+(*         SENSOR NODE        *)
+(******************************)
+let Sensor =
+(* the sensor recieves registration data over secure channel from gateway node *)
+in(sc2, (SIDj:bitstring,Kgs:bitstring,TKj:bitstring));
+
+(* Sensor Authentication Phase *)
+(* Launch an unbounded number of sessions *)
+!(
+      event SensorStart(SIDj);
+      (* the sensor recieves authentication request from the gateway node *)
+      in(pc,(sM8:bitstring,sM9:bitstring,sM10:bitstring,sM11:bitstring,sM12:bitstring,sT:bool));
+      let KgsNew = xor(Kgs,TKj) in
+      let stg' = bs2timestamp(xor(sM11,KgsNew)) in
+      if(checktimestamp(stg',sT)) then
+      let sIDi' = xor(sM8,KgsNew) in
+      let srg' = xor(sM9,h(con(sIDi',KgsNew))) in
+      let sri' = xor(srg',sM10) in
+      let M12' = h(con(sIDi',con5(SIDj,KgsNew,sri',srg',timestamp2bs(stg')))) in
+      if((M12' = sM12)) then
+      event GWNsAuthenticated(SIDj);
+      new rj:random;
+      (* the sensor updates hash-chain token *)
+      let TKj = h(TKj) in
+      let SKj = h(con3(xor(sIDi',sri'),xor(SIDj,random2bs(rj)),srg')) in
+      let M13 = xor(random2bs(rj),KgsNew) in
+      new tj:timestamp;
+      let M14 = xor(timestamp2bs(tj),KgsNew) in
+      let M15 = h(con4(KgsNew,SKj,random2bs(rj),timestamp2bs(tj))) in
+      (* the sensor sends authentication response to the gateway node *)
+      out(pc,(M13,M14,M15,true));
+      0
+  ).
+
+(******************************)
+(*        GATEWAY NODE        *)
+(******************************)
+let Gateway =
+in(pc,gX:ellipticCurvePoint);
+(* handle user registration  *)
+new ni:random; (* user token seed *)
+in(sc1,(gIDi:bitstring,gHPWi:bitstring));
+let gBi = xor(h(con(gIDi,MaS)),gHPWi) in
+let gTKi = h(random2bs(ni)) in
+(* the gateway saves user registration data into its database *)
+insert UsersTable(gIDi,gTKi);
+(* the gateway sends smart card data over secure channel to the user node *)
+out(sc1,(gBi,gX,gTKi));
+
+(* handle sensor registration  *)
+new gSIDj:bitstring; (* create a sensor identity *)
+new nj:random; (* sensor token seed *)
+let gTKj = h(random2bs(nj)) in
+let gKgs = h(con(gSIDj,MaS)) in
+(* the gateway saves sensor registration data into its database *)
+insert SensorsTable(gSIDj,gTKj);
+(* the gateway sends registration data over secure channel for store in the sensor node *)
+out(sc2,(gSIDj,gKgs,gTKj));
+
+(* Gateway Authentication Phase *)
+(* Launch an unbounded number of sessions *)
+!(
+    (* the gateway recieves authentication request from the user node *)
+    in(pc,(gM1:bitstring,gM3:bitstring,gM4:bitstring,gM5:bitstring,gM6:bitstring,gM7:bitstring,guT:bool));
+    let M2' = eccPoint2bs(eccMul(x,bs2eccPoint(gM1))) in
+    let ti' = bs2timestamp(xor(gM6,M2')) in
+    if(checktimestamp(ti',guT)) then
+    let gIDi' = xor(gM3,M2') in
+    (* the gateway reads the user's hash-chain token from database *)
+    get UsersTable(=gIDi',gTKi) in
+    let Kgu' = xor(gTKi,h(con(gIDi',MaS))) in
+    let ri' = xor(gM4,Kgu') in
+    let SIDj' = xor(gM5,h(con(gIDi',ri'))) in
+    let M7' = h(con5(M2',Kgu',SIDj',ri',timestamp2bs(ti'))) in
+    if((M7' = gM7)) then
+    event UserAuthenticated(gIDi');
+    new rg:random;
+    (* the gateway reads the sensor's hash-chain token from database *)
+    get SensorsTable(=SIDj',gTKj) in
+    let gKgsNew = xor(gKgs,gTKj) in
+    let M8 = xor(gIDi',gKgsNew)  in
+    let M9 = xor(random2bs(rg),h(con(gIDi',gKgsNew))) in
+    let M10 = xor(random2bs(rg),ri') in
+    new stg:timestamp;
+    let M11 = xor(timestamp2bs(stg),gKgsNew) in
+    let M12 = h(con(gIDi',con5(SIDj',gKgsNew,ri',random2bs(rg),timestamp2bs(stg)))) in
+    event GWNsStart(SIDj');
+    (* the gateway sends authentication request to the sensor node *)
+    out(pc,(M8,M9,M10,M11,M12,true));
+
+    (* the gateway recieves authentication response from the sensor node *)
+    in(pc,(gM13:bitstring,gM14:bitstring,gM15:bitstring,gsT:bool));
+    let tj' = bs2timestamp(xor(gM14,gKgsNew)) in
+    if(checktimestamp(tj',gsT)) then
+    let rj' = xor(gM13,gKgsNew) in
+    let SKg = h(con3(xor(gIDi',ri'),xor(SIDj',rj'),random2bs(rg))) in
+    let M15' = h(con4(gKgsNew,SKg,ri',rj')) in
+    if((M15' = gM15)) then
+    event SensorAuthenticated(SIDj');
+    (* the gateway updates the user's and the sensor's hash-chain tokens *)
+    let gTKiNew = h(gTKi) in
+    let gTKjNew = h(gTKj) in
+    insert UsersTable(gIDi',gTKiNew);
+    insert SensorsTable(SIDj',gTKjNew);
+    let M16 = xor(random2bs(rg),Kgu') in
+    let M17 = xor(ri',rj') in
+    new utg:timestamp;
+    let M18 = xor(timestamp2bs(utg),M2') in
+    let M19 = h(con4(SKg,random2bs(rg),rj',timestamp2bs(utg))) in
+    event GWNuStart(gIDi');
+    (* the gateway sends authentication response to the user node *)
+    out(pc,(M16,M17,M18,M19,true));
+    0
+).
+
+
+process
+  let X = eccMul(x,P) in
+  out(pc,(X));
+  ((User|Gateway|Sensor)|phase 1;out(pc,(x,MaS)))
